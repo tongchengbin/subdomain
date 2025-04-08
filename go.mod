@@ -1,4 +1,4 @@
-module github.com/risk-radar/subdomain
+module github.com/tongchengbin/subdomain
 
 go 1.24.2
 
