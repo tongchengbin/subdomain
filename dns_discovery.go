@@ -712,7 +712,6 @@ func (d *DnsDiscovery) capturePackets() {
 
 				// 获取源标识
 				d.queryMapMutex.RLock()
-				result.Source = d.queryMap[dns.ID]
 				d.queryMapMutex.RUnlock()
 
 				// 解析IP地址
