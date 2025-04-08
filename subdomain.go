@@ -26,5 +26,6 @@ func NewDefaultDnsDiscovery() *DnsDiscovery {
 		WithTimeout(DefaultTimeout),
 		WithDnsServers(DefaultDnsServers),
 		WithRateLimiter(NewTokenBucketLimiter(DefaultRate, DefaultBurst)),
+		WithLogger(NewDefaultLogger()),
 	)
 }

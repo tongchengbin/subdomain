@@ -7,7 +7,6 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 	"github.com/jackpal/gateway"
-	"github.com/projectdiscovery/gologger"
 	"net"
 	"time"
 )
@@ -121,7 +120,6 @@ func ArpRequestSync(iFaceName string, srcAddr, dstAddr net.IP, srcMac net.Hardwa
 	}
 	err := gopacket.SerializeLayers(buffer, opts, &eth, &arp)
 	if err != nil {
-		gologger.Error().Msgf("Sync ARP Failed to serialize layers:%v", err)
 		return nil, err
 	}
 	handle, err := pcap.OpenLive(iFaceName, 65536, false, pcap.BlockForever)
@@ -133,7 +131,6 @@ func ArpRequestSync(iFaceName string, srcAddr, dstAddr net.IP, srcMac net.Hardwa
 	}
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	//defer close(packetSource.Packets()) Fished after close
-	gologger.Info().Msgf("Send ARP Request Wait 2s")
 	timeout := time.After(2 * time.Second)
 	for {
 		select {
@@ -145,7 +142,6 @@ func ArpRequestSync(iFaceName string, srcAddr, dstAddr net.IP, srcMac net.Hardwa
 					net.IP(arpPacket.DstProtAddress).Equal(srcAddr) {
 					// 输出目标 MAC 地址
 					sourceMAC := net.HardwareAddr(arpPacket.SourceHwAddress)
-					gologger.Info().Msgf("Get ARP Reply: %s", sourceMAC.String())
 					return sourceMAC, nil
 				}
 			}

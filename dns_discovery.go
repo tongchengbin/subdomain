@@ -2,8 +2,8 @@ package subdomain
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -357,6 +357,7 @@ type DnsDiscovery struct {
 	stopChan     chan struct{}          // 停止信号通道
 	resultChan   chan *DnsResult        // 结果通道
 	packetSource *gopacket.PacketSource // 数据包源
+	logger       Logger                 // 日志记录器
 
 	// 查询映射，用于关联DNS查询ID和源信息
 	queryMapMutex      sync.RWMutex
@@ -406,6 +407,7 @@ func NewDnsDiscovery(options ...DnsDiscoveryOption) *DnsDiscovery {
 		requestCache: make(map[string]*RequestCacheItem), // 初始化请求缓存
 		cacheHead:    nil,
 		cacheTail:    nil,
+		logger:       NewDefaultLogger(), // 默认使用DefaultLogger
 	}
 	// 应用选项
 	for _, option := range options {
@@ -422,7 +424,6 @@ func NewDnsDiscovery(options ...DnsDiscoveryOption) *DnsDiscovery {
 
 	// 设置全局实例
 	SetDnsDiscoveryInstance(d)
-
 	return d
 }
 
@@ -447,6 +448,13 @@ func WithDnsServers(servers []string) DnsDiscoveryOption {
 func WithTimeout(timeout time.Duration) DnsDiscoveryOption {
 	return func(d *DnsDiscovery) {
 		d.timeout = timeout
+	}
+}
+
+// WithLogger 设置日志记录器
+func WithLogger(logger Logger) DnsDiscoveryOption {
+	return func(d *DnsDiscovery) {
+		d.logger = logger
 	}
 }
 
@@ -512,9 +520,34 @@ func (d *DnsDiscovery) ScanWithDomains(domains []string) []*DnsResult {
 	return collector.GetResults()
 }
 
+func (d *DnsDiscovery) CheckWildcard(domain string) bool {
+	// 检查是否为泛解析域名
+	// 生成3个随机子域名进行判断，如果都能解析到IP，则认为是泛解析
+	// 生成随机字符串
+	generateDomain := func() string {
+		const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+		b := make([]byte, 10) // 10个字符的随机串
+		for i := range b {
+			b[i] = charset[rand.Intn(len(charset))]
+		}
+		return fmt.Sprintf("%s.%s", string(b), domain)
+	}
+	randomDomain := generateDomain()
+	d.logger.Debug("测试随机域名: %s", randomDomain)
+	result := d.ScanWithDomains([]string{randomDomain + "." + domain})
+	if len(result) == 0 {
+		return false
+	}
+	return true
+}
+
 // ScanWithWordlist 使用字典扫描指定域名的子域名
 func (d *DnsDiscovery) ScanWithWordlist(domain string, wordlist []string) []*DnsResult {
 	// 创建完整的子域名列表
+	// 泛解析检查
+	if d.CheckWildcard(domain) {
+		return nil
+	}
 	domains := make([]string, 0, len(wordlist))
 	for _, word := range wordlist {
 		domains = append(domains, fmt.Sprintf("%s.%s", word, domain))
@@ -586,54 +619,6 @@ func (d *DnsDiscovery) initDnsServers(servers []string) {
 		d.dnsServers = append(d.dnsServers, net.ParseIP("8.8.8.8"))
 		d.dnsServers = append(d.dnsServers, net.ParseIP("1.1.1.1"))
 	}
-}
-
-// selectBestInterface 选择最佳网络接口
-func (d *DnsDiscovery) selectBestInterface(devices []pcap.Interface) *pcap.Interface {
-	// 首先尝试找到非回环接口
-	for _, dev := range devices {
-		if !isLoopback(dev) && len(dev.Addresses) > 0 {
-			// 检查是否有IPv4地址
-			for _, addr := range dev.Addresses {
-				ip := addr.IP
-				if ip.To4() != nil {
-					return &dev
-				}
-			}
-		}
-	}
-
-	// 如果没有找到非回环接口，尝试找到任何有IPv4地址的接口
-	for _, dev := range devices {
-		if len(dev.Addresses) > 0 {
-			for _, addr := range dev.Addresses {
-				ip := addr.IP
-				if ip.To4() != nil {
-					return &dev
-				}
-			}
-		}
-	}
-
-	// 如果没有找到任何合适的接口，返回nil
-	return nil
-}
-
-// isLoopback 判断接口是否为回环接口
-func isLoopback(dev pcap.Interface) bool {
-	// 检查接口名称是否包含"loopback"或"lo"
-	if strings.Contains(strings.ToLower(dev.Name), "loopback") || strings.Contains(strings.ToLower(dev.Name), "lo") {
-		return true
-	}
-
-	// 检查接口地址是否为回环地址
-	for _, addr := range dev.Addresses {
-		if addr.IP.IsLoopback() {
-			return true
-		}
-	}
-
-	return false
 }
 
 // initNetworkPacketCapture 初始化网络数据包捕获
@@ -746,27 +731,6 @@ func (d *DnsDiscovery) capturePackets() {
 			}
 		}
 	}
-}
-
-func formatDNS(dns *layers.DNS) string {
-	var result string
-	result += fmt.Sprintf("ID: %d, QR: %t, OpCode: %d, AA: %t, TC: %t, RD: %t, RA: %t, Z: %d, ResponseCode: %d, QDCount: %d, ANCount: %d, NSCount: %d, ARCount: %d\n",
-		dns.ID, dns.QR, dns.OpCode, dns.AA, dns.TC, dns.RD, dns.RA, dns.Z, dns.ResponseCode, dns.QDCount, dns.ANCount, dns.NSCount, dns.ARCount)
-
-	// 打印问题部分
-	result += "Questions:\n"
-	for _, q := range dns.Questions {
-		result += fmt.Sprintf("  Name: %s, Type: %d, Class: %d\n", string(q.Name), q.Type, q.Class)
-	}
-
-	// 打印应答部分
-	result += "Answers:\n"
-	for _, a := range dns.Answers {
-		result += fmt.Sprintf("  Name: %s, Type: %d, Class: %d, TTL: %d, IP: %s, NS: %s, CNAME: %s, PTR: %s, TXTs: %v, SOA: %v, SRV: %v\n",
-			string(a.Name), a.Type, a.Class, a.TTL, a.IP, string(a.NS), string(a.CNAME), string(a.PTR), a.TXTs, a.SOA, a.SRV)
-	}
-
-	return result
 }
 
 // sendDnsQuery 发送DNS查询
