@@ -10,7 +10,6 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	"github.com/projectdiscovery/gologger"
 )
 
 const DNsType = "a"
@@ -484,7 +483,7 @@ func (d *DnsDiscovery) ScanWithDomains(domains []string) []*DnsResult {
 	// 获取空闲端口作为批次标识
 	freePort, err := GetFreePort()
 	if err != nil {
-		gologger.Warning().Msgf("dns_discovery.go:subdomain:ScanWithDomains: %s", err)
+		d.logger.Warning("dns_discovery.go:subdomain:ScanWithDomains: %s", err)
 		return nil
 	}
 	// 创建并注册结果收集器
@@ -500,7 +499,7 @@ func (d *DnsDiscovery) ScanWithDomains(domains []string) []*DnsResult {
 		collector.AddPendingQuery(domain)
 		err := d.sendDnsQuery(domain, freePort)
 		if err != nil {
-			gologger.Warning().Msgf("dns_discovery.go:subdomain:ScanWithDomains: %s", err)
+			d.logger.Warning("dns_discovery.go:subdomain:ScanWithDomains: %s", err)
 			// 如果发送失败，从待处理查询中移除
 			collector.RemovePendingQuery(domain)
 		}
@@ -567,7 +566,7 @@ func (d *DnsDiscovery) ScanWithCallback(domain string, wordlist []string, callba
 	// 获取空闲端口作为批次标识
 	freePort, err := GetFreePort()
 	if err != nil {
-		gologger.Warning().Msgf("dns_discovery.go:subdomain:ScanWithCallback: %s", err)
+		d.logger.Warning("dns_discovery.go:subdomain:ScanWithCallback: %s", err)
 		return nil
 	}
 
@@ -585,7 +584,7 @@ func (d *DnsDiscovery) ScanWithCallback(domain string, wordlist []string, callba
 		collector.AddPendingQuery(domain)
 		err := d.sendDnsQuery(domain, freePort)
 		if err != nil {
-			gologger.Warning().Msgf("dns_discovery.go:subdomain:ScanWithCallback: %s", err)
+			d.logger.Warning("dns_discovery.go:subdomain:ScanWithCallback: %s", err)
 			// 如果发送失败，从待处理查询中移除
 			collector.RemovePendingQuery(domain)
 		}
@@ -654,7 +653,7 @@ func (d *DnsDiscovery) capturePackets() {
 	// 设置过滤器，只捕获DNS响应包
 	err := d.handle.SetBPFFilter("udp and src port 53")
 	if err != nil {
-		gologger.Error().Msgf("设置BPF过滤器失败: %v", err)
+		d.logger.Error("设置BPF过滤器失败: %v", err)
 		return
 	}
 	// 创建数据包源
@@ -779,7 +778,7 @@ func (d *DnsDiscovery) sendDnsQuery(domain string, sourcePort int) error {
 	}
 	err := gopacket.SerializeLayers(buffer, opts, d.ethLayer, ipLayer, udp, dns)
 	if err != nil {
-		gologger.Error().Msgf("Sync DNS Failed to serialize layers:%v", err)
+		d.logger.Warning("dns_discovery.go:subdomain:sendDnsQuery: %s", err)
 		// 发送失败，移除查询映射
 		d.queryMapMutex.Lock()
 		delete(d.queryMap, dnsID)
@@ -994,7 +993,7 @@ func (d *DnsDiscovery) processRetries() {
 			// 处理重试请求
 			err := d.sendDnsQuery(req.Domain, req.Source)
 			if err != nil {
-				gologger.Warning().Msgf("重试DNS查询失败: %s", err)
+				d.logger.Warning("重试DNS查询失败: %s", err)
 			}
 		}
 	}
@@ -1011,7 +1010,8 @@ func (d *DnsDiscovery) retryQuery(domain string, sourcePort int) {
 	select {
 	case d.reqChan <- req:
 		// 成功发送到重试通道
-		gologger.Debug().Msgf("重试DNS查询: %s", domain)
+		d.logger.Debug("重试DNS查询: %s", domain)
+
 	default:
 		// 通道已满，直接重试
 		if d.rateLimiter != nil {
@@ -1019,7 +1019,7 @@ func (d *DnsDiscovery) retryQuery(domain string, sourcePort int) {
 		}
 		err := d.sendDnsQuery(domain, sourcePort)
 		if err != nil {
-			gologger.Warning().Msgf("直接重试DNS查询失败: %s", err)
+			d.logger.Warning("直接重试DNS查询失败: %s", err)
 		}
 	}
 }
