@@ -16,11 +16,10 @@ const DNsType = "a"
 
 // DnsResult 表示DNS查询结果
 type DnsResult struct {
-	Domain  string   // 域名
-	IP      []string // IP地址
-	CNAME   string   // CNAME记录
-	QueryID uint16   // DNS查询ID，用于关联请求和响应
-	Source  string   // 来源标识，用于区分不同的扫描任务
+	Domain  string   `json:"domain"`             // 域名
+	IP      []string `json:"ip"`                 // IP地址
+	CNAME   string   `json:"cname,omitempty"`    // CNAME记录
+	QueryID uint16   `json:"query_id,omitempty"` // DNS查询ID，用于关联请求和响应
 }
 
 // DomainCallback 定义发现域名时的回调函数类型
@@ -504,7 +503,6 @@ func (d *DnsDiscovery) ScanWithDomains(domains []string) []*DnsResult {
 			collector.RemovePendingQuery(domain)
 		}
 	}
-
 	// 计算最大等待时间：每个域名的超时时间总和，但不超过合理的上限
 	domainCount := len(domains)
 	maxWaitTime := d.timeout * time.Duration(domainCount)
@@ -547,7 +545,9 @@ func (d *DnsDiscovery) ScanWithWordlist(domain string, wordlist []string) []*Dns
 	if d.CheckWildcard(domain) {
 		return nil
 	}
-	domains := make([]string, 0, len(wordlist))
+	domains := make([]string, 0, len(wordlist)+1)
+	// add root domain
+	domains = append(domains, domain)
 	for _, word := range wordlist {
 		domains = append(domains, fmt.Sprintf("%s.%s", word, domain))
 	}
