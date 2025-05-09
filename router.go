@@ -6,7 +6,7 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	"github.com/jackpal/gateway"
+	"github.com/tongchengbin/gateway"
 	"net"
 	"time"
 )
